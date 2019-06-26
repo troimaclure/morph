@@ -1,4 +1,4 @@
-package com.mycompany.mapper.entity;
+package com.mycompany.mapper.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -9,14 +9,11 @@ import lombok.NoArgsConstructor;
  *
  * @author ajosse
  */
-@Builder
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class Person {
+@Builder
+public class PersonDTONested {
 
-    private int age;
-    private String lastname;
-    private PersonNested nested;
-
+    public int scoreDto;
 }

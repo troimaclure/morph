@@ -13,6 +13,7 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface MorphMethod {
 
-    MorphField[] fields();
+    MorphField[] fields() default {};
 
+    MorphNested[] nesteds() default {};
 }

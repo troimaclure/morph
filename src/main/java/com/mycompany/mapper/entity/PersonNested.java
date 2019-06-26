@@ -9,14 +9,11 @@ import lombok.NoArgsConstructor;
  *
  * @author ajosse
  */
-@Builder
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class Person {
+@Builder
+public class PersonNested {
 
-    private int age;
-    private String lastname;
-    private PersonNested nested;
-
+    public int score;
 }
