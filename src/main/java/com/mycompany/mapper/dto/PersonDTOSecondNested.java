@@ -1,6 +1,6 @@
 package com.mycompany.mapper.dto;
 
-import com.mycompany.mapper.entity.PersonNested;
+import java.util.Date;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -14,11 +14,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
-public class PersonDTO {
+public class PersonDTOSecondNested {
 
-    private int age;
-    private String name;
-    private PersonDTONested dto;
-    private PersonDTOSecondNested dto2;
-
+    public String hello;
+    public String yes;
+    public String goodString;
 }

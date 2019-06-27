@@ -1,6 +1,7 @@
 package com.mycompany.mapper.processors;
 
 import com.google.auto.service.AutoService;
+import com.mycompany.mapper.utils.JavaLang;
 import com.mycompany.mapper.morph.MorphField;
 import com.mycompany.mapper.morph.MorphMethod;
 import com.mycompany.mapper.morph.MorphNested;
@@ -109,7 +110,9 @@ public class MorphProcessor extends AbstractProcessor {
 
     private void writeMethodForField(ArrayList<Field> fields, final PrintWriter out, String prefix) {
         //all fields not delcared but same with target
+
         for (Field field : fields) {
+
             out.println("." + field.getName() + "(" + prefix + ".get" + toCapitalize(field.getName()) + "())");
         }
     }
@@ -117,7 +120,13 @@ public class MorphProcessor extends AbstractProcessor {
     private void writeMethodForMorph(MorphField[] fields, final PrintWriter out, String prefix) {
         //all fields declared in annotations
         for (MorphField field : fields) {
-            out.println("." + field.target() + "(" + prefix + ".get" + toCapitalize(field.source()) + "())");
+            String converter = "";
+            String converterEnd = "";
+            if (!field.converterType().equals(JavaLang.class)) {
+                converter = field.converterType().getSimpleName() + "." + field.converterMethod() + "(";
+                converterEnd = ")";
+            }
+            out.println("." + field.target() + "(" + converter + prefix + ".get" + toCapitalize(field.source()) + "())" + converterEnd);
         }
     }
 
@@ -150,16 +159,21 @@ public class MorphProcessor extends AbstractProcessor {
         for (Method method : classTarget.getMethods()) {
             MorphMethod morphMethod = method.getAnnotation(MorphMethod.class);
             if (morphMethod == null) continue;
+
             addToImports(method.getReturnType().getCanonicalName());
             addToImports(method.getParameterTypes()[0].getCanonicalName());
 
             for (MorphNested nested : morphMethod.nesteds()) {
                 addToImports(nested.sourceType().getCanonicalName());
                 addToImports(nested.targetType().getCanonicalName());
+                for (MorphField field : nested.fields()) {
+                    addToImports(field.converterType().getCanonicalName());
+                }
             }
             for (MorphField nested : morphMethod.fields()) {
                 addToImports(nested.sourceType().getCanonicalName());
                 addToImports(nested.targetType().getCanonicalName());
+                addToImports(nested.converterType().getCanonicalName());
             }
         }
 
@@ -170,7 +184,7 @@ public class MorphProcessor extends AbstractProcessor {
     }
 
     private void addToImports(String classImport) {
-        if (!imports.contains(classImport))
+        if (!imports.contains(classImport) && !classImport.equals(JavaLang.class.getCanonicalName()))
             imports.add(classImport);
     }
 
