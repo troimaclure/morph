@@ -18,8 +18,6 @@ public interface Custom {
 
     @MorphMethod(
             fields = {
-                @MorphField(source = "age", sourceType = Integer.class, target = "age", targetType = Integer.class)
-                ,
                 @MorphField(source = "lastname", sourceType = String.class, target = "name", targetType = String.class)
             },
             nesteds = {
@@ -35,8 +33,6 @@ public interface Custom {
     PersonDTO morph(Person p);
 
     @MorphMethod(fields = {
-        @MorphField(source = "age", sourceType = Integer.class, target = "age", targetType = Integer.class)
-        ,
         @MorphField(source = "name", sourceType = String.class, target = "lastname", targetType = String.class)
     },
             nesteds = {

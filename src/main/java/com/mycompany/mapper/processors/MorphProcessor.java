@@ -6,8 +6,10 @@ import com.mycompany.mapper.morph.MorphMethod;
 import com.mycompany.mapper.morph.MorphNested;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -86,22 +88,49 @@ public class MorphProcessor extends AbstractProcessor {
             out.print(" public " + returnType.getSimpleName() + " morph(" + paramType.getSimpleName() + " p ) {");
             out.println();
             out.print("return " + returnType.getSimpleName() + ".builder()");
-            for (MorphField field : morphMethod.fields()) {
-                out.println("." + field.target() + "(p.get" + toCapitalize(field.source()) + "())");
-            }
-            //.dto(PersonDTONested.builder().scoreDto(p.getNested().getScore()).build())
 
+            ArrayList<Field> fields = gatherFieldsMirror(returnType, morphMethod.fields(), paramType);
+            writeMethodForMorph(morphMethod.fields(), out, "p");
+            writeMethodForField(fields, out, "p");
             for (MorphNested nested : morphMethod.nesteds()) {
+
+                String prefix = "p.get" + toCapitalize(nested.source()) + "()";
                 out.println("." + nested.target() + "(" + nested.targetType().getSimpleName() + ".builder()");
-                for (MorphField field : nested.fields()) {
-                    out.println("." + field.target() + "(" + "p.get" + toCapitalize(nested.source()) + "().get" + toCapitalize(field.source()) + "())");
-                }
+                ArrayList<Field> gatherFieldsMirror = gatherFieldsMirror(nested.targetType(), nested.fields(), nested.sourceType());
+                writeMethodForField(gatherFieldsMirror, out, prefix);
+                writeMethodForMorph(nested.fields(), out, prefix);
                 out.print(".build())");
             }
             out.print(".build();");
             out.println();
             out.print("}");
         }
+    }
+
+    private void writeMethodForField(ArrayList<Field> fields, final PrintWriter out, String prefix) {
+        //all fields not delcared but same with target
+        for (Field field : fields) {
+            out.println("." + field.getName() + "(" + prefix + ".get" + toCapitalize(field.getName()) + "())");
+        }
+    }
+
+    private void writeMethodForMorph(MorphField[] fields, final PrintWriter out, String prefix) {
+        //all fields declared in annotations
+        for (MorphField field : fields) {
+            out.println("." + field.target() + "(" + prefix + ".get" + toCapitalize(field.source()) + "())");
+        }
+    }
+
+    private ArrayList<Field> gatherFieldsMirror(Class<?> returnType, MorphField[] fieldsMorph, Class<?> paramType) throws SecurityException {
+        ArrayList<Field> fields = new ArrayList<>();
+        for (Field declaredField : returnType.getDeclaredFields()) {
+            try {
+                if (!Arrays.asList(fieldsMorph).stream().anyMatch(e -> e.source().equals(declaredField.getName())))
+                    fields.add(paramType.getDeclaredField(declaredField.getName()));
+            } catch (NoSuchFieldException ex) {
+            }
+        }
+        return fields;
     }
 
     private void writeCloseClass(final PrintWriter out) {

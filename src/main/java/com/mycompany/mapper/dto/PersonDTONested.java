@@ -16,4 +16,6 @@ import lombok.NoArgsConstructor;
 public class PersonDTONested {
 
     public int scoreDto;
+    public int same;
+    public String mirror;
 }
