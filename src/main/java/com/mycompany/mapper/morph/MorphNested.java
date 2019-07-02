@@ -14,5 +14,8 @@ public @interface MorphNested {
 
     Class targetType();
 
-    MorphField[] fields();
+    MorphField[] fields() default {};
+
+    boolean list() default false;
+
 }

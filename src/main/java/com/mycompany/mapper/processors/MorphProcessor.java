@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Processor;
 import javax.annotation.processing.RoundEnvironment;
@@ -33,8 +34,14 @@ import javax.tools.JavaFileObject;
 @SupportedAnnotationTypes("com.mycompany.mapper.morph.Morph")
 @SupportedSourceVersion(SourceVersion.RELEASE_8)
 @AutoService(Processor.class)
-public class MorphProcessor extends AbstractProcessor {
 
+public abstract class MorphProcessor extends AbstractProcessor {
+
+    /**
+     * @parameter expression="${project}"
+     * @required
+     * @readonly
+     */
     public ArrayList<String> imports = new ArrayList<>();
 
     @Override
@@ -43,16 +50,15 @@ public class MorphProcessor extends AbstractProcessor {
 
         for (TypeElement annotation : annotations) {
             Set<? extends Element> annotatedElements = roundEnv.getElementsAnnotatedWith(annotation);
+
             for (Element annotatedElement : annotatedElements) {
                 PackageElement packageOf = elementUtils.getPackageOf(annotatedElement);
-                System.out.println(packageOf.getQualifiedName());
+
                 try {
                     Class<?> forName = Class.forName(packageOf.getQualifiedName() + "." + annotatedElement.getSimpleName());
-
                     writeFile(packageOf.getQualifiedName().toString(), forName);
 
                 } catch (ClassNotFoundException | IOException ex) {
-                    Logger.getLogger(MorphProcessor.class.getName()).log(Level.SEVERE, null, ex);
                 }
             }
         }
@@ -60,7 +66,7 @@ public class MorphProcessor extends AbstractProcessor {
         return true;
     }
 
-    private void writeFile(String packageName, Class<?> classTarget) throws IOException {
+    private void writeFile(String packageName, Class classTarget) throws IOException {
         String className = classTarget.getSimpleName() + "Impl";
         JavaFileObject builderFile = processingEnv.getFiler()
                 .createSourceFile(packageName + "." + className);
@@ -78,7 +84,7 @@ public class MorphProcessor extends AbstractProcessor {
         }
     }
 
-    private void writeMethods(Class<?> classTarget, final PrintWriter out) throws SecurityException {
+    private void writeMethods(Class classTarget, final PrintWriter out) throws SecurityException {
         for (Method method : classTarget.getMethods()) {
             MorphMethod morphMethod = method.getAnnotation(MorphMethod.class);
 
@@ -86,33 +92,61 @@ public class MorphProcessor extends AbstractProcessor {
             Class<?> returnType = method.getReturnType();
             Class<?> paramType = method.getParameterTypes()[0];
             out.println("@Override");
-            out.print(" public " + returnType.getSimpleName() + " morph(" + paramType.getSimpleName() + " p ) {");
+            out.print(" public " + returnType.getSimpleName() + " " + method.getName() + "(" + paramType.getSimpleName() + " p ) {");
+            createNestedArraylist(morphMethod, out);
+
             out.println();
             out.print("return " + returnType.getSimpleName() + ".builder()");
 
             ArrayList<Field> fields = gatherFieldsMirror(returnType, morphMethod.fields(), paramType);
             writeMethodForMorph(morphMethod.fields(), out, "p");
             writeMethodForField(fields, out, "p");
-            for (MorphNested nested : morphMethod.nesteds()) {
-
-                String prefix = "p.get" + toCapitalize(nested.source()) + "()";
-                out.println("." + nested.target() + "(" + nested.targetType().getSimpleName() + ".builder()");
-                ArrayList<Field> gatherFieldsMirror = gatherFieldsMirror(nested.targetType(), nested.fields(), nested.sourceType());
-                writeMethodForField(gatherFieldsMirror, out, prefix);
-                writeMethodForMorph(nested.fields(), out, prefix);
-                out.print(".build())");
-            }
+            writeNested(morphMethod, out);
+            appendNestedArrayList(morphMethod, out);
             out.print(".build();");
             out.println();
             out.print("}");
         }
     }
 
+    private void writeNested(MorphMethod morphMethod, final PrintWriter out) throws SecurityException {
+        for (MorphNested nested : morphMethod.nesteds()) {
+            if (nested.list()) continue;
+            String prefix = "p.get" + toCapitalize(nested.source()) + "()";
+            out.println("." + nested.target() + "(" + nested.targetType().getSimpleName() + ".builder()");
+            ArrayList<Field> gatherFieldsMirror = gatherFieldsMirror(nested.targetType(), nested.fields(), nested.sourceType());
+            writeMethodForField(gatherFieldsMirror, out, prefix);
+            writeMethodForMorph(nested.fields(), out, prefix);
+            out.print(".build())");
+            out.println();
+        }
+    }
+
+    private void appendNestedArrayList(MorphMethod morphMethod, final PrintWriter out) {
+        for (MorphNested n : morphMethod.nesteds()) {
+            if (!n.list()) continue;
+            out.print("." + n.target() + "(" + n.target() + ")");
+        }
+    }
+
+    private void createNestedArraylist(MorphMethod morphMethod, final PrintWriter out) throws SecurityException {
+        for (MorphNested n : morphMethod.nesteds()) {
+            if (!n.list()) continue;
+            out.println("ArrayList<" + n.targetType().getSimpleName() + ">" + n.target() + " = new ArrayList<>(); ");
+            out.println("for(" + n.sourceType().getSimpleName() + " it : p.get" + toCapitalize(n.source()) + "()){");
+            out.println(n.target() + ".add(" + n.targetType().getSimpleName() + ".builder()");
+            ArrayList<Field> gatherFieldsMirror = gatherFieldsMirror(n.targetType(), n.fields(), n.sourceType());
+            writeMethodForField(gatherFieldsMirror, out, "it");
+            writeMethodForMorph(n.fields(), out, "it");
+            out.print(".build()");
+            out.print(");");
+            out.println("}");
+        }
+    }
+
     private void writeMethodForField(ArrayList<Field> fields, final PrintWriter out, String prefix) {
         //all fields not delcared but same with target
-
         for (Field field : fields) {
-
             out.println("." + field.getName() + "(" + prefix + ".get" + toCapitalize(field.getName()) + "())");
         }
     }
@@ -120,14 +154,31 @@ public class MorphProcessor extends AbstractProcessor {
     private void writeMethodForMorph(MorphField[] fields, final PrintWriter out, String prefix) {
         //all fields declared in annotations
         for (MorphField field : fields) {
+            boolean isPathedField = field.source().contains(".") || field.target().contains(".");
+            if (field.source().contains(".")) {
+                prefix += addNestedPath(field.source());
+            } else if (field.target().contains(".")) {
+                prefix = addNestedPath(field.target());
+            }
             String converter = "";
             String converterEnd = "";
             if (!field.converterType().equals(JavaLang.class)) {
                 converter = field.converterType().getSimpleName() + "." + field.converterMethod() + "(";
                 converterEnd = ")";
             }
-            out.println("." + field.target() + "(" + converter + prefix + ".get" + toCapitalize(field.source()) + "())" + converterEnd);
+            if (!isPathedField)
+                out.println("." + field.target() + "(" + converter + prefix + ".get" + toCapitalize(field.source()) + "())" + converterEnd);
+            else out.println("." + field.target() + "(" + converter + prefix + ")" + converterEnd);
         }
+    }
+
+    private String addNestedPath(String path) {
+        String[] split = path.split(Pattern.quote("."));
+        String ret = "";
+        for (String string : split) {
+            ret += ".get" + toCapitalize(string) + "()";
+        }
+        return ret;
     }
 
     private ArrayList<Field> gatherFieldsMirror(Class<?> returnType, MorphField[] fieldsMorph, Class<?> paramType) throws SecurityException {
@@ -181,6 +232,7 @@ public class MorphProcessor extends AbstractProcessor {
             out.print("import " + aImport + ";");
         }
         out.print("import " + classTarget.getCanonicalName() + ";");
+        out.print("import java.util.ArrayList;");
     }
 
     private void addToImports(String classImport) {
