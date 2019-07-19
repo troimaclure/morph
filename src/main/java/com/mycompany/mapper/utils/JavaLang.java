@@ -1,4 +1,4 @@
-package com.mycompany.mapper.utils;
+package fr.milleis.morphit.utils;
 
 /**
  *
