@@ -1,4 +1,4 @@
-package fr.milleis.morphit;
+package fr.troimaclure.morphit;
 
 /**
  *

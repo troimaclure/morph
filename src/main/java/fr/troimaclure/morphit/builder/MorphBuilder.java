@@ -1,4 +1,4 @@
-package fr.milleis.morphit.builder;
+package fr.troimaclure.morphit.builder;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;

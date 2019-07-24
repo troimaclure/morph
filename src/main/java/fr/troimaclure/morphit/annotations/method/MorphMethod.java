@@ -1,6 +1,6 @@
-package fr.milleis.morphit.annotations.method;
+package fr.troimaclure.morphit.annotations.method;
 
-import fr.milleis.morphit.annotations.field.MorphField;
+import fr.troimaclure.morphit.annotations.field.MorphField;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -13,9 +13,7 @@ import java.lang.annotation.Target;
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface MorphMethodOverride {
-
-    String morphMethodName();
+public @interface MorphMethod {
 
     MorphField[] value() default {};
 

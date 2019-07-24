@@ -1,13 +1,15 @@
-package fr.milleis.morphit.processors;
+package fr.troimaclure.morphit.processors;
 
-import fr.milleis.morphit.annotations.converter.Converter;
-import fr.milleis.morphit.annotations.converter.ConverterMethods;
-import fr.milleis.morphit.annotations.field.MorphField;
-import fr.milleis.morphit.annotations.method.MorphMethod;
-import fr.milleis.morphit.annotations.method.MorphMethodMirror;
-import fr.milleis.morphit.annotations.field.Names;
-import fr.milleis.morphit.annotations.field.Types;
-import fr.milleis.morphit.utils.JavaLang;
+import fr.troimaclure.morphit.annotations.converter.Converter;
+import fr.troimaclure.morphit.annotations.converter.ConverterMethods;
+import fr.troimaclure.morphit.annotations.field.MorphField;
+import fr.troimaclure.morphit.annotations.method.MorphMethod;
+import fr.troimaclure.morphit.annotations.method.MorphMethodMirror;
+import fr.troimaclure.morphit.annotations.field.Names;
+import fr.troimaclure.morphit.annotations.field.Types;
+import fr.troimaclure.morphit.annotations.method.MorphMethodOverride;
+import fr.troimaclure.morphit.exception.MorphMethodNotFoundException;
+import fr.troimaclure.morphit.utils.JavaLang;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.annotation.Annotation;
@@ -15,7 +17,10 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.RoundEnvironment;
@@ -144,26 +149,32 @@ public abstract class MorphProcessor extends AbstractProcessor {
     }
 
     private void writeFile(String packageName, Class classTarget) throws IOException {
-        String className = classTarget.getSimpleName() + IMPL;
+        try {
+            String className = classTarget.getSimpleName() + IMPL;
 
-        JavaFileObject builderFile = processingEnv.getFiler()
-                .createSourceFile(packageName + DOT + className);
+            JavaFileObject builderFile = processingEnv.getFiler()
+                    .createSourceFile(packageName + DOT + className);
 
-        this.out = new PrintWriter(builderFile.openWriter());
+            this.out = new PrintWriter(builderFile.openWriter());
 
-        handleExtension(classTarget);
+            handleExtension(classTarget);
 
-        writePackage(packageName);
-        writeImports(classTarget);
-        writeClassAndConstructor(className, classTarget);
-        checkImplementedMethods(classTarget);
+            writePackage(packageName);
+            writeImports(classTarget);
+            writeClassAndConstructor(className, classTarget);
+            checkImplementedMethods(classTarget);
 
-        writeMethods(classTarget);
-        writeMethodMirrors(classTarget);
-        writeImplementedMethods();
-        writeCloseClass();
-        this.out.flush();
-        this.out.close();
+            writeMethods(classTarget);
+            writeMethodMirrors(classTarget);
+            writeMethodOverrided(classTarget);
+            writeImplementedMethods();
+            writeCloseClass();
+            this.out.flush();
+            this.out.close();
+        } catch (MorphMethodNotFoundException ex) {
+            System.out.println(ex.getMessage());
+            ex.printStackTrace();
+        }
     }
 
     /**
@@ -180,7 +191,7 @@ public abstract class MorphProcessor extends AbstractProcessor {
             Class<?> returnType = method.getReturnType();
             Class<?>[] parameterTypes = method.getParameterTypes();
             if (morphMethod == null) continue;
-            if (!validateMethod(returnType, parameterTypes, method)) continue;
+            if (!validateMethod(returnType, parameterTypes)) continue;
             Class<?> paramType = parameterTypes[0];
             String parent = toFirstLetterLower(returnType.getSimpleName());
             ArrayList<Field> fields = gatherFieldsMirror(returnType, morphMethod.value(), paramType);
@@ -200,7 +211,7 @@ public abstract class MorphProcessor extends AbstractProcessor {
      * @param method
      * @return
      */
-    private boolean validateMethod(Class<?> returnType, Class<?>[] parameterTypes, Method method) {
+    private boolean validateMethod(Class<?> returnType, Class<?>[] parameterTypes) {
         if (returnType.equals(Object.class)) {
             return false;
         }
@@ -212,7 +223,7 @@ public abstract class MorphProcessor extends AbstractProcessor {
             Class<?> returnType = method.getReturnType();
             Class<?>[] parameterTypes = method.getParameterTypes();
 
-            if (!validateMethod(returnType, parameterTypes, method)) continue;
+            if (!validateMethod(returnType, parameterTypes)) continue;
             Class<?> paramType = parameterTypes[0];
 
             out.println(OVERRIDE);
@@ -422,17 +433,8 @@ public abstract class MorphProcessor extends AbstractProcessor {
 
     private void writeImports(Class<?> classTarget) throws SecurityException {
 
-        //ALL TYPE REGISTERING
-        for (Method method : classTarget.getMethods()) {
-            MorphMethod morphMethod = method.getAnnotation(MorphMethod.class);
-            if (morphMethod == null) continue;
-
-            addToImports(method.getReturnType().getCanonicalName());
-            addToImports(method.getParameterTypes()[0].getCanonicalName());
-
-            importNestedType(morphMethod);
-            importFieldType(morphMethod);
-        }
+        inspectMorphMethods(classTarget);
+        inspectMorphMethodOverrides(classTarget);
 
         //IMPORT ALL TYPES
         imports.forEach((aImport) -> {
@@ -447,21 +449,44 @@ public abstract class MorphProcessor extends AbstractProcessor {
         out.println(IMPORT_JAVAUTILSTREAM_COLLECTORS);
         if (!autowired.isEmpty()) {
             out.println(IMPORT_ORGSPRINGFRAMEWORKBEANSFACTORYANNO);
-
         }
 
     }
 
-    private void importFieldType(MorphMethod morphMethod) {
-        for (MorphField nested : morphMethod.value()) {
+    private void inspectMorphMethods(Class<?> classTarget) throws SecurityException {
+        //ALL TYPE REGISTERING
+        for (Method method : classTarget.getMethods()) {
+            MorphMethod morphMethod = method.getAnnotation(MorphMethod.class);
+            if (morphMethod == null) continue;
+            addToImports(method.getReturnType().getCanonicalName());
+            addToImports(method.getParameterTypes()[0].getCanonicalName());
+            importNestedType(morphMethod.value());
+            importFieldType(morphMethod.value());
+        }
+    }
+
+    private void inspectMorphMethodOverrides(Class<?> classTarget) throws SecurityException {
+        //ALL TYPE REGISTERING
+        for (Method method : classTarget.getMethods()) {
+            MorphMethodOverride morphMethod = method.getAnnotation(MorphMethodOverride.class);
+            if (morphMethod == null) continue;
+            addToImports(method.getReturnType().getCanonicalName());
+            addToImports(method.getParameterTypes()[0].getCanonicalName());
+            importNestedType(morphMethod.fields());
+            importFieldType(morphMethod.fields());
+        }
+    }
+
+    private void importFieldType(MorphField[] morphFields) {
+        for (MorphField nested : morphFields) {
             addToImports(nested.types().value().getCanonicalName());
             addToImports(nested.types().target().getCanonicalName());
             addToImports(nested.converter().type().getCanonicalName());
         }
     }
 
-    private void importNestedType(MorphMethod morphMethod) {
-        for (MorphField field : morphMethod.value()) {
+    private void importNestedType(MorphField[] fields) {
+        for (MorphField field : fields) {
             addToImports(field.types().value().getCanonicalName());
             addToImports(field.types().target().getCanonicalName());
             if (!field.converter().type().equals(JavaLang.class))
@@ -524,26 +549,47 @@ public abstract class MorphProcessor extends AbstractProcessor {
         }
     }
 
-    private void writeMethodMirrors(Class classTarget) {
+    private void writeMethodMirrors(Class classTarget) throws MorphMethodNotFoundException {
         for (Method method : classTarget.getMethods()) {
             try {
                 //if already implemented , continue ;
                 if (implemented.contains(method)) continue;
                 MorphMethodMirror morphMethodMirror = method.getAnnotation(MorphMethodMirror.class);
+                if (morphMethodMirror == null) continue;
+
                 Class<?> returnType = method.getReturnType();
                 Class<?>[] parameterTypes = method.getParameterTypes();
-                if (morphMethodMirror == null) continue;
-                if (!validateMethod(returnType, parameterTypes, method)) continue;
+                if (!validateMethod(returnType, parameterTypes)) continue;
+                Class<?> paramType = parameterTypes[0];
+                Method m = classTarget.getMethod(morphMethodMirror.value(), returnType);
+                MorphMethod morphMethod = getMorphMethod(m, classTarget);
+                if (morphMethod == null) throw new MorphMethodNotFoundException();
+                MorphMethod newMorphMethod = createNewMorphMethod(morphMethod);
+                ArrayList<Field> fields = gatherFieldsMirror(returnType, newMorphMethod.value(), paramType);
+                writeMethod(returnType, method, paramType, newMorphMethod, toFirstLetterLower(returnType.getSimpleName()), fields);
+            } catch (NoSuchMethodException | SecurityException ex) {
+                ex.printStackTrace();
+            }
+        }
+    }
+
+    private void writeMethodOverrided(Class classTarget) throws MorphMethodNotFoundException {
+        for (Method method : classTarget.getMethods()) {
+            try {
+                //if already implemented , continue ;
+                if (implemented.contains(method)) continue;
+                MorphMethodOverride morphMethodOverride = method.getAnnotation(MorphMethodOverride.class);
+                Class<?> returnType = method.getReturnType();
+                Class<?>[] parameterTypes = method.getParameterTypes();
+                if (morphMethodOverride == null) continue;
+                if (!validateMethod(returnType, parameterTypes)) continue;
                 Class<?> paramType = parameterTypes[0];
                 String parent = toFirstLetterLower(returnType.getSimpleName());
-                Method m = classTarget.getMethod(morphMethodMirror.value(), returnType);
-
-                MorphMethod morphMethod = m.getAnnotation(MorphMethod.class);
-
-                MorphMethod newMorphMethod = createNewmorphMethod(morphMethod);
-
+                Method m = classTarget.getMethod(morphMethodOverride.value(), parameterTypes);
+                MorphMethod morphMethod = getMorphMethod(m, classTarget);
+                if (morphMethod == null) throw new MorphMethodNotFoundException();
+                MorphMethod newMorphMethod = createOverrideMorphMethod(morphMethod, morphMethodOverride);
                 ArrayList<Field> fields = gatherFieldsMirror(returnType, newMorphMethod.value(), paramType);
-
                 writeMethod(returnType, method, paramType, newMorphMethod, parent, fields);
             } catch (NoSuchMethodException | SecurityException ex) {
                 ex.printStackTrace();
@@ -551,7 +597,46 @@ public abstract class MorphProcessor extends AbstractProcessor {
         }
     }
 
-    private MorphMethod createNewmorphMethod(MorphMethod reference) {
+    private MorphMethod createOverrideMorphMethod(MorphMethod reference, MorphMethodOverride override) {
+
+        MorphMethod newMorphMethod = new MorphMethod() {
+            @Override
+            public MorphField[] value() {
+                final ArrayList<MorphField> morphFields = new ArrayList<>();
+                int i;
+                //add reference field or overrided field
+                for (MorphField morphField : reference.value()) {
+                    Optional<MorphField> findFirst = Arrays.asList(override.fields()).stream().filter(e -> e.names().value().equals(morphField.names().value())).findFirst();
+                    if (findFirst.isPresent()) {
+                        morphFields.add(findFirst.get());
+                    } else {
+                        morphFields.add(morphField);
+                    }
+                }
+                //add overrided field missing in reference
+                for (MorphField morphField : override.fields()) {
+                    Optional<MorphField> findFirst = Arrays.asList(reference.value()).stream().filter(e -> e.names().value().equals(morphField.names().value())).findFirst();
+                    if (!findFirst.isPresent()) {
+                        morphFields.add(morphField);
+                    }
+                }
+                MorphField[] morphF = new MorphField[morphFields.size()];
+                i = 0;
+                for (MorphField morphField : morphFields) {
+                    morphF[i++] = morphField;
+                }
+                return morphF;
+            }
+
+            @Override
+            public Class<? extends Annotation> annotationType() {
+                return reference.annotationType();
+            }
+        };
+        return newMorphMethod;
+    }
+
+    private MorphMethod createNewMorphMethod(MorphMethod reference) {
         MorphMethod newMorphMethod = new MorphMethod() {
             @Override
             public MorphField[] value() {
@@ -671,6 +756,29 @@ public abstract class MorphProcessor extends AbstractProcessor {
 
     private String getTarget(Names names) {
         return names.target().isEmpty() ? names.value() : names.target();
+    }
+
+    //try to find the MorphMethod source
+    private MorphMethod getMorphMethod(Method m, Class classTarget) throws NoSuchMethodException {
+        for (Annotation annotation : m.getAnnotations()) {
+            if (annotation.annotationType().equals(MorphMethod.class)) return m.getAnnotation(MorphMethod.class);
+            else if (annotation.annotationType().equals(MorphMethodMirror.class)) {
+                MorphMethodMirror morphMethodMirror = m.getAnnotation(MorphMethodMirror.class);
+                Class<?> returnType = m.getReturnType();
+                if (!validateMethod(returnType, m.getParameterTypes())) continue;
+                Method method = classTarget.getMethod(morphMethodMirror.value(), returnType);
+                MorphMethod morphMethod = getMorphMethod(method, classTarget);
+                return createNewMorphMethod(morphMethod);
+            } else if (annotation.annotationType().equals(MorphMethodOverride.class)) {
+                MorphMethodOverride methodOverride = m.getAnnotation(MorphMethodOverride.class);
+                Class<?> returnType = m.getReturnType();
+                if (!validateMethod(returnType, m.getParameterTypes())) continue;
+                Method method = classTarget.getMethod(methodOverride.value(), m.getParameterTypes());
+                MorphMethod morphMethod = getMorphMethod(method, classTarget);
+                return createOverrideMorphMethod(morphMethod, methodOverride);
+            }
+        }
+        return null;
     }
 
 }

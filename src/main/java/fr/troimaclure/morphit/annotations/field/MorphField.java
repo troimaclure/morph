@@ -1,7 +1,7 @@
-package fr.milleis.morphit.annotations.field;
+package fr.troimaclure.morphit.annotations.field;
 
-import fr.milleis.morphit.annotations.converter.Converter;
-import fr.milleis.morphit.utils.JavaLang;
+import fr.troimaclure.morphit.annotations.converter.Converter;
+import fr.troimaclure.morphit.utils.JavaLang;
 
 /**
  * Simple case :<br>

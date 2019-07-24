@@ -1,6 +1,6 @@
-package fr.milleis.morphit.annotations.converter;
+package fr.troimaclure.morphit.annotations.converter;
 
-import fr.milleis.morphit.utils.JavaLang;
+import fr.troimaclure.morphit.utils.JavaLang;
 
 /**
  *
